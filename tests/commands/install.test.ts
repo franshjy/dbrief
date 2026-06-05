@@ -32,6 +32,7 @@ describe("install command", () => {
     const content = readFileSync(targetFile, "utf-8");
     expect(content).toContain("dbrief-note");
     expect(content).toContain("# Daily Note Generator");
+    expect(content).toContain("Run `dbrief extract`");
     expect(content).toContain("## Summary");
     expect(content).toContain("## Projects");
     expect(content).toContain("## Other");

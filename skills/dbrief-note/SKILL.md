@@ -8,6 +8,17 @@ description: Generate a polished daily note from a Dbrief JSON artifact. Use whe
 Read the Dbrief JSON artifact and generate one portable Markdown daily note.
 Infer note conventions from the target location, existing file, nearby templates, and project instructions, but always produce Markdown.
 
+## Required Workflow
+
+When the user asks for a daily note, first generate or refresh the artifact with the Dbrief CLI before writing the note.
+
+1. Run `dbrief extract` for the requested date or range.
+2. Use `--date`, `--from`, `--to`, or `--out` when the user request needs them.
+3. Read the generated JSON artifact.
+4. Write the final Markdown note from that artifact.
+
+Default artifact names are `./dbrief_YYYY-MM-DD.json` in the current directory unless `--out` is provided.
+
 ## Output Format
 
 If no stronger existing convention is detected, use this base structure:
@@ -37,14 +48,15 @@ If no stronger existing convention is detected, use this base structure:
 
 ## Instructions
 
-1. Read the JSON artifact (user provides the path, or use `./dbrief_YYYY-MM-DD.json` from the current directory by default)
-2. For each project, analyze the conversation threads to identify:
+1. If the artifact does not already exist for the requested date, run `dbrief extract` first.
+2. Read the JSON artifact (user provides the path, or use `./dbrief_YYYY-MM-DD.json` from the current directory by default)
+3. For each project, analyze the conversation threads to identify:
    - Concrete changes (features, fixes, decisions made)
    - Unresolved items (questions raised, blockers, incomplete work)
    - Notable context (architectural decisions, trade-offs discussed)
-3. Write a concise summary that ties everything together
-4. Keep the tone retrospective and factual
-5. Use the project directory name as the project heading
+4. Write a concise summary that ties everything together
+5. Keep the tone retrospective and factual
+6. Use the project directory name as the project heading
 
 ## Writer Rules
 
