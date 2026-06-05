@@ -1,0 +1,7 @@
+{"timestamp":"2026-06-01T10:00:00.000Z","type":"session_meta"}
+{"timestamp":"2026-06-01T10:00:01.000Z","type":"turn_context","payload":{"cwd":"/test/project","timezone":"Asia/Bangkok","current_date":"2026-06-01"}}
+{"timestamp":"2026-06-01T10:00:02.000Z","type":"event_msg","payload":{"type":"user_message","message":"Old message before compaction"}}
+{"timestamp":"2026-06-01T10:00:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Old response before compaction"}]}}
+{"timestamp":"2026-06-01T12:00:00.000Z","type":"compacted","payload":{"message":"","replacement_history":[{"role":"user","content":"Earlier context from before compaction"},{"role":"assistant","content":"Earlier assistant reply from history"},{"role":"user","content":"Another old user message"}]}}
+{"timestamp":"2026-06-01T12:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"Post-compaction user message"}}
+{"timestamp":"2026-06-01T12:00:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Post-compaction assistant response"}]}}

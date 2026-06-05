@@ -1,0 +1,9 @@
+{"timestamp":"2026-06-02T05:00:00.000Z","type":"session_meta"}
+{"timestamp":"2026-06-02T05:00:01.000Z","type":"turn_context","payload":{"cwd":"/test/project","timezone":"Asia/Bangkok","current_date":"2026-06-02"}}
+{"timestamp":"2026-06-02T05:00:02.000Z","type":"event_msg","payload":{"type":"user_message","message":"Hello, help me with this task"}}
+{"timestamp":"2026-06-02T05:00:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Sure, I can help you with that."}]}}
+{"timestamp":"2026-06-02T05:00:10.000Z","type":"response_item","payload":{"type":"function_call","name":"shell_command","arguments":"{\"command\":\"ls -la\",\"workdir\":\"/test/project\"}"}}
+{"timestamp":"2026-06-02T05:00:11.000Z","type":"response_item","payload":{"type":"function_call_output","name":"shell_command","output":"Exit code: 0\nWall time: 0.5 seconds\nOutput:\ntotal 8\ndrwxr-xr-x 2 user user 4096 Jun 2 05:00 .\n"}}
+{"timestamp":"2026-06-02T05:01:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"Thanks, now do something else"}}
+{"timestamp":"2026-06-02T05:01:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done!"}]}}
+{"timestamp":"2026-06-02T23:00:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"This is late at night"}}
