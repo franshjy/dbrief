@@ -89,10 +89,10 @@ Output is minified JSON. Messages are tuples of `["u"|"a", content_string]`.
           "branch": "master",
           "context": [],
           "messages": [
-            ["u", "Make the daily note output Markdown-first."],
-            ["a", "Use a stable base structure and infer conventions from the note location."],
-            ["u", "Keep adapters out of scope for now."],
-            ["a", "Treat the final note as portable Markdown and let the writer infer local conventions."]
+            ["u", "Why did you modify the mapper of the user table?"],
+            ["a", "Whoopsies!"],
+            ["u", "tf?"],
+            ["a", "My bad g"]
           ]
         }
       ]
