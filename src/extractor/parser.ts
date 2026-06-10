@@ -2,6 +2,12 @@ import Database from "better-sqlite3";
 import { createReadStream, existsSync } from "fs";
 import { createInterface } from "readline";
 import type { MessageTuple } from "../types/artifact.js";
+import {
+  createEmptyParsedSession,
+  type ParseSessionOptions,
+  type ParsedSession,
+  type SessionCandidate,
+} from "../sources/types.js";
 
 export interface ThreadMetadata {
   id: string;
@@ -25,27 +31,7 @@ export interface RawJsonlLine {
   payload?: Record<string, unknown>;
 }
 
-export interface ParsedSession {
-  thread_id: string;
-  source_file: string;
-  cwd: string | null;
-  timezone: string | null;
-  context: MessageTuple[];
-  messages: MessageTuple[];
-  user_activity_timestamps: number[];
-}
-
-export interface SessionParseWarning {
-  type: "missing_file" | "invalid_jsonl" | "read_error";
-  filePath: string;
-  threadId: string;
-  detail: string;
-  line?: number;
-}
-
-interface ParseSessionOptions {
-  onWarning?: (warning: SessionParseWarning) => void;
-}
+export type { ParsedSession, SessionParseWarning, ParseSessionOptions } from "../sources/types.js";
 
 export function getEarliestSessionDate(dbPath: string): number {
   if (!existsSync(dbPath)) {
@@ -96,24 +82,34 @@ export function readThreadMetadata(dbPath: string): ThreadMetadata[] {
 
 export async function parseSessionFile(
   filePath: string,
-  threadId: string,
+  thread: string | SessionCandidate,
   options: ParseSessionOptions = {}
 ): Promise<ParsedSession> {
-  const session: ParsedSession = {
-    thread_id: threadId,
+  const candidate = typeof thread === "string"
+    ? {
+      thread_id: thread,
+      source: "codex" as const,
+      source_file: filePath,
+      cwd: null,
+      project_root: null,
+      title: null,
+      branch: null,
+      created_at_ms: 0,
+      updated_at_ms: 0,
+      archived: false,
+    }
+    : thread;
+  const session = createEmptyParsedSession({
+    ...candidate,
     source_file: filePath,
-    cwd: null,
-    timezone: null,
-    context: [],
-    messages: [],
-    user_activity_timestamps: [],
-  };
+  });
 
   if (!existsSync(filePath)) {
     options.onWarning?.({
+      source: session.source,
       type: "missing_file",
       filePath,
-      threadId,
+      threadId: session.thread_id,
       detail: "Session file does not exist",
     });
     return session;
@@ -136,9 +132,10 @@ export async function parseSessionFile(
         raw = JSON.parse(line);
       } catch {
         options.onWarning?.({
+          source: session.source,
           type: "invalid_jsonl",
           filePath,
-          threadId,
+          threadId: session.thread_id,
           line: lineNumber,
           detail: "Skipped invalid JSONL line",
         });
@@ -195,9 +192,10 @@ export async function parseSessionFile(
     }
   } catch (error) {
     options.onWarning?.({
+      source: session.source,
       type: "read_error",
       filePath,
-      threadId,
+      threadId: session.thread_id,
       detail: `Failed to read session file: ${getErrorMessage(error)}`,
     });
   } finally {

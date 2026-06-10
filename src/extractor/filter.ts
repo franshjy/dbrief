@@ -1,4 +1,4 @@
-import type { ParsedSession, ThreadMetadata } from "./parser.js";
+import type { ParsedSession } from "../sources/types.js";
 
 export interface DayBoundaries {
   start: Date;
@@ -58,12 +58,10 @@ function localToUTC(localStr: string, timezone: string): Date {
 
 export function filterSessionsByActivity(
   sessions: ParsedSession[],
-  threadMetadata: Map<string, ThreadMetadata>,
   start: Date,
   end: Date
 ): ParsedSession[] {
   return sessions.filter((s) => {
-    if (!threadMetadata.has(s.thread_id)) return false;
     return s.user_activity_timestamps.some((timestamp) => {
       return timestamp >= start.getTime() && timestamp <= end.getTime();
     });

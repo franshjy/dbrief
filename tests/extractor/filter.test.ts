@@ -6,7 +6,7 @@ import {
   getDateRange,
   timestampToDate,
 } from "../../src/extractor/filter";
-import type { ParsedSession, ThreadMetadata } from "../../src/extractor/parser";
+import type { ParsedSession } from "../../src/sources/types";
 
 describe("getDayBoundaries", () => {
   it("returns start and end dates for a given day", () => {
@@ -31,8 +31,15 @@ describe("filterSessionsByActivity", () => {
   const sessions: ParsedSession[] = [
     {
       thread_id: "s1",
+      source: "codex",
       source_file: "s1.jsonl",
       cwd: "/test",
+      project_root: null,
+      title: "Thread 1",
+      branch: null,
+      created_at_ms: new Date("2026-06-02T09:00:00.000Z").getTime(),
+      updated_at_ms: new Date("2026-06-02T10:00:00.000Z").getTime(),
+      archived: false,
       timezone: "UTC",
       context: [],
       messages: [["u", "hello"]],
@@ -40,8 +47,15 @@ describe("filterSessionsByActivity", () => {
     },
     {
       thread_id: "s2",
+      source: "codex",
       source_file: "s2.jsonl",
       cwd: "/test",
+      project_root: null,
+      title: "Thread 2",
+      branch: null,
+      created_at_ms: new Date("2026-06-05T09:00:00.000Z").getTime(),
+      updated_at_ms: new Date("2026-06-05T10:00:00.000Z").getTime(),
+      archived: false,
       timezone: "UTC",
       context: [],
       messages: [["u", "different day"]],
@@ -49,8 +63,15 @@ describe("filterSessionsByActivity", () => {
     },
     {
       thread_id: "s3",
+      source: "codex",
       source_file: "s3.jsonl",
       cwd: "/test",
+      project_root: null,
+      title: "Thread 3",
+      branch: null,
+      created_at_ms: new Date("2026-06-01T09:00:00.000Z").getTime(),
+      updated_at_ms: new Date("2026-06-05T10:00:00.000Z").getTime(),
+      archived: false,
       timezone: "UTC",
       context: [],
       messages: [["u", "resumed today"]],
@@ -58,67 +79,10 @@ describe("filterSessionsByActivity", () => {
     },
   ];
 
-  const threadMetadata = new Map<string, ThreadMetadata>([
-    [
-      "s1",
-      {
-        id: "s1",
-        rollout_path: "s1.jsonl",
-        cwd: "/test",
-        title: "Thread 1",
-        first_user_message: "hello",
-        created_at_ms: new Date("2026-06-02T09:00:00.000Z").getTime(),
-        updated_at_ms: new Date("2026-06-02T10:00:00.000Z").getTime(),
-        git_branch: null,
-        git_sha: null,
-        git_origin_url: null,
-        source: "cli",
-        model: null,
-        archived: 0,
-      },
-    ],
-    [
-      "s2",
-      {
-        id: "s2",
-        rollout_path: "s2.jsonl",
-        cwd: "/test",
-        title: "Thread 2",
-        first_user_message: "different day",
-        created_at_ms: new Date("2026-06-05T09:00:00.000Z").getTime(),
-        updated_at_ms: new Date("2026-06-05T10:00:00.000Z").getTime(),
-        git_branch: null,
-        git_sha: null,
-        git_origin_url: null,
-        source: "cli",
-        model: null,
-        archived: 0,
-      },
-    ],
-    [
-      "s3",
-      {
-        id: "s3",
-        rollout_path: "s3.jsonl",
-        cwd: "/test",
-        title: "Thread 3",
-        first_user_message: "resumed today",
-        created_at_ms: new Date("2026-06-01T09:00:00.000Z").getTime(),
-        updated_at_ms: new Date("2026-06-05T10:00:00.000Z").getTime(),
-        git_branch: null,
-        git_sha: null,
-        git_origin_url: null,
-        source: "cli",
-        model: null,
-        archived: 0,
-      },
-    ],
-  ]);
-
   it("returns sessions whose user activity timestamps fall in the date range", () => {
     const start = new Date("2026-06-02T00:00:00.000Z");
     const end = new Date("2026-06-02T23:59:59.999Z");
-    const filtered = filterSessionsByActivity(sessions, threadMetadata, start, end);
+    const filtered = filterSessionsByActivity(sessions, start, end);
 
     expect(filtered.map((s) => s.thread_id)).toEqual(["s1", "s3"]);
   });

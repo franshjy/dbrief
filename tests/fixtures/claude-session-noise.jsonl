@@ -1,0 +1,5 @@
+{"type":"system","timestamp":"2026-06-02T10:00:00.000Z","sessionId":"claude-session-1","cwd":"/workspace/project-alpha","gitBranch":"feature-x"}
+{"type":"user","timestamp":"2026-06-02T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Summarize today"}]}}
+{"type":"assistant","timestamp":"2026-06-02T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Working on it"},{"type":"tool_use","name":"ReadFile","input":{"path":"README.md"}}]}}
+{"type":"user","timestamp":"2026-06-02T10:00:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"file contents"}]}}
+{"type":"assistant","timestamp":"2026-06-02T10:00:04.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Summary complete"}]}}

@@ -5,10 +5,11 @@ import { inspectCommand } from "../commands/inspect.js";
 import { installCommand } from "../commands/install.js";
 
 const program = new Command();
+const collectOption = (value: string, previous: string[]): string[] => previous.concat(value);
 
 program
   .name("dbrief")
-  .description("Extract Codex session activity into daily artifacts")
+  .description("Extract coding agent session activity into daily artifacts")
   .version("0.1.0");
 
 program
@@ -18,7 +19,10 @@ program
   .option("--from <date>", "Start date for range extraction (YYYY-MM-DD)")
   .option("--to <date>", "End date for range extraction (YYYY-MM-DD)")
   .option("--out <path>", "Output file path (single day) or directory (range)")
-  .option("--codex-dir <path>", "Codex data directory", "~/.codex")
+  .option("--source <source>", "Enable session source(s): codex, opencode, claude", collectOption, [])
+  .option("--codex-dir <path>", "Codex data directory")
+  .option("--opencode-dir <path>", "Opencode data directory")
+  .option("--claude-dir <path>", "Claude Code data directory")
   .action(extractCommand);
 
 program
