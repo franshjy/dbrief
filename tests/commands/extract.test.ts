@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -10,6 +10,7 @@ vi.mock("../../src/utils/timezone", () => ({
 
 import { extractCommand } from "../../src/commands/extract";
 import * as parserModule from "../../src/extractor/parser";
+import * as claudeModule from "../../src/sources/claude";
 import * as opencodeModule from "../../src/sources/opencode";
 
 describe("extract command", () => {
@@ -326,6 +327,51 @@ describe("extract command", () => {
     }
   });
 
+  it("reports only artifact files created in the range summary", async () => {
+    const codexDir = mkdtempSync(join(tmpdir(), "codex-trails-range-summary-"));
+    cleanupDirs.push(codexDir);
+
+    const projectDir = join(codexDir, "project");
+    const sessionPath = join(codexDir, "session.jsonl");
+    const dbPath = join(codexDir, "state_5.sqlite");
+    const outDir = join(codexDir, "out");
+
+    writeFileSync(
+      sessionPath,
+      [
+        "{\"timestamp\":\"2026-06-02T10:00:00.000Z\",\"type\":\"turn_context\",\"payload\":{\"cwd\":\"" + escapeWindowsPath(projectDir) + "\",\"timezone\":\"UTC\"}}",
+        "{\"timestamp\":\"2026-06-02T10:00:01.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"hello\"}}",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    createThreadsDb(dbPath, [
+      {
+        id: "thread-1",
+        rollout_path: sessionPath,
+        cwd: projectDir,
+        title: "Thread 1",
+        first_user_message: "hello",
+        created_at_ms: Date.parse("2026-06-02T10:00:00.000Z"),
+        updated_at_ms: Date.parse("2026-06-02T10:05:00.000Z"),
+      },
+    ]);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      from: "2026-06-02",
+      to: "2026-06-03",
+      out: outDir,
+      source: ["codex"],
+      codexDir,
+    });
+
+    expect(logSpy.mock.calls.flat().join(" ")).toContain("Done. Extracted 1 day to");
+    expect(existsSync(join(outDir, "dbrief_2026-06-02.json"))).toBe(true);
+    expect(existsSync(join(outDir, "dbrief_2026-06-03.json"))).toBe(false);
+  });
+
   it("includes resumed threads based on user activity timestamps rather than thread metadata", async () => {
     const codexDir = mkdtempSync(join(tmpdir(), "codex-trails-resumed-thread-"));
     cleanupDirs.push(codexDir);
@@ -572,6 +618,50 @@ describe("extract command", () => {
     expect(artifact.projects[0].threads[0].context).toEqual([]);
   });
 
+  it("extracts Opencode messages when the optional compaction table is absent", async () => {
+    const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-opencode-no-context-"));
+    cleanupDirs.push(opencodeDir);
+
+    const projectRoot = join(opencodeDir, "workspace", "project-no-context");
+    const outPath = join(opencodeDir, "dbrief_2026-06-02.json");
+
+    createOpencodeDb(opencodeDir, {
+      sessionId: "session-no-context",
+      projectId: "project-no-context",
+      directory: projectRoot,
+      worktree: projectRoot,
+      title: "Opencode No Context",
+      branch: null,
+      createdAt: Date.parse("2026-06-02T10:00:00.000Z"),
+      updatedAt: Date.parse("2026-06-02T10:05:00.000Z"),
+      includeContextTable: false,
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          createdAt: Date.parse("2026-06-02T10:00:01.000Z"),
+          parts: [{ id: "p1", type: "text", text: "still extract me" }],
+        },
+      ],
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      date: "2026-06-02",
+      out: outPath,
+      source: ["opencode"],
+      opencodeDir,
+    } as never);
+
+    const artifact = JSON.parse(readFileSync(outPath, "utf-8")) as {
+      projects: Array<{ threads: Array<{ messages: Array<[string, string]>; context: Array<[string, string]> }> }>;
+    };
+
+    expect(artifact.projects[0].threads[0].messages).toEqual([["u", "still extract me"]]);
+    expect(artifact.projects[0].threads[0].context).toEqual([]);
+  });
+
   it("merges Codex and Opencode sessions into one artifact when both sources are selected", async () => {
     const codexDir = mkdtempSync(join(tmpdir(), "codex-trails-merge-codex-"));
     const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-merge-opencode-"));
@@ -696,6 +786,208 @@ describe("extract command", () => {
 
     expect(parseSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("uses non-empty sources for open-ended range extraction when another enabled source is empty", async () => {
+    const codexDir = mkdtempSync(join(tmpdir(), "codex-trails-range-codex-"));
+    const claudeDir = mkdtempSync(join(tmpdir(), "codex-trails-range-empty-claude-"));
+    cleanupDirs.push(codexDir, claudeDir);
+
+    const projectDir = join(codexDir, "project");
+    const sessionPath = join(codexDir, "session.jsonl");
+    const dbPath = join(codexDir, "state_5.sqlite");
+    const outDir = join(codexDir, "out");
+    mkdirSync(join(claudeDir, "projects"), { recursive: true });
+
+    writeFileSync(
+      sessionPath,
+      [
+        "{\"timestamp\":\"2026-06-02T10:00:00.000Z\",\"type\":\"turn_context\",\"payload\":{\"cwd\":\"" + escapeWindowsPath(projectDir) + "\",\"timezone\":\"UTC\"}}",
+        "{\"timestamp\":\"2026-06-02T10:00:01.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"codex only\"}}",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    createThreadsDb(dbPath, [
+      {
+        id: "thread-1",
+        rollout_path: sessionPath,
+        cwd: projectDir,
+        title: "Codex Thread",
+        first_user_message: "codex only",
+        created_at_ms: Date.parse("2026-06-02T10:00:00.000Z"),
+        updated_at_ms: Date.parse("2026-06-02T10:05:00.000Z"),
+      },
+    ]);
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      to: "2026-06-02",
+      out: outDir,
+      source: ["codex", "claude"],
+      codexDir,
+      claudeDir,
+    });
+
+    expect(existsSync(join(outDir, "dbrief_2026-06-02.json"))).toBe(true);
+  });
+
+  it("extracts an artifact from Claude Code project sessions when explicitly selected", async () => {
+    const claudeDir = mkdtempSync(join(tmpdir(), "codex-trails-claude-"));
+    cleanupDirs.push(claudeDir);
+
+    const projectRoot = "C:\\dev\\projects\\project-alpha";
+    const outPath = join(claudeDir, "dbrief_2026-06-02.json");
+
+    createClaudeSession(claudeDir, {
+      projectFolder: "C--dev-projects-project-alpha",
+      sessionId: "claude-session-1",
+      lines: [
+        {
+          type: "system",
+          timestamp: "2026-06-02T10:00:00.000Z",
+          sessionId: "claude-session-1",
+          cwd: projectRoot,
+          gitBranch: "feature-x",
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:01.000Z",
+          isMeta: true,
+          message: {
+            role: "user",
+            content: "<local-command-caveat>Caveat</local-command-caveat>",
+          },
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:02.000Z",
+          message: {
+            role: "user",
+            content: "<command-name>/add-dir</command-name>\n<command-message>add-dir</command-message>",
+          },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-06-02T10:00:03.000Z",
+          message: {
+            role: "assistant",
+            content: [{ type: "thinking", thinking: "hidden reasoning" }],
+          },
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:04.000Z",
+          message: {
+            role: "user",
+            content: "Summarize today",
+          },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-06-02T10:00:05.000Z",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "Working on it" },
+              { type: "tool_use", name: "ReadFile", input: { path: "README.md" } },
+            ],
+          },
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:06.000Z",
+          message: {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "tool-1", content: "file contents" }],
+          },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-06-02T10:00:07.000Z",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Summary complete" }],
+          },
+        },
+      ],
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      date: "2026-06-02",
+      out: outPath,
+      source: ["claude"],
+      claudeDir,
+    } as never);
+
+    expect(existsSync(outPath)).toBe(true);
+    const artifact = JSON.parse(readFileSync(outPath, "utf-8")) as {
+      projects: Array<{ project_key: string; threads: Array<{ title: string; branch: string | null; messages: Array<[string, string]>; context: Array<[string, string]> }> }>;
+    };
+
+    expect(artifact.projects).toHaveLength(1);
+    expect(artifact.projects[0].project_key).toBe(projectRoot);
+    expect(artifact.projects[0].threads[0].title).toBe("Summarize today");
+    expect(artifact.projects[0].threads[0].branch).toBe("feature-x");
+    expect(artifact.projects[0].threads[0].messages).toEqual([
+      ["u", "Summarize today"],
+      ["a", "Working on it"],
+      ["a", "Summary complete"],
+    ]);
+    expect(artifact.projects[0].threads[0].context).toEqual([]);
+  });
+
+  it("parses each Claude session once across range extraction", async () => {
+    const claudeDir = mkdtempSync(join(tmpdir(), "codex-trails-claude-range-"));
+    cleanupDirs.push(claudeDir);
+
+    const outDir = join(claudeDir, "out");
+
+    createClaudeSession(claudeDir, {
+      projectFolder: "C--dev-projects-project-gamma",
+      sessionId: "claude-session-2",
+      lines: [
+        {
+          type: "system",
+          timestamp: "2026-06-02T10:00:00.000Z",
+          sessionId: "claude-session-2",
+          cwd: "C:\\dev\\projects\\project-gamma",
+          gitBranch: "main",
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:01.000Z",
+          message: {
+            role: "user",
+            content: "day one",
+          },
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-03T10:00:01.000Z",
+          message: {
+            role: "user",
+            content: "day two",
+          },
+        },
+      ],
+    });
+
+    const parseSpy = vi.spyOn(claudeModule.claudeSource, "parseSession");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      from: "2026-06-02",
+      to: "2026-06-03",
+      out: outDir,
+      source: ["claude"],
+      claudeDir,
+    } as never);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 interface ThreadSeed {
@@ -771,6 +1063,7 @@ function createOpencodeDb(
     branch: string | null;
     createdAt: number;
     updatedAt: number;
+    includeContextTable?: boolean;
     messages: OpencodeMessageSeed[];
   }
 ): void {
@@ -852,8 +1145,11 @@ function createOpencodeDb(
         time_created INTEGER NOT NULL,
         time_updated INTEGER NOT NULL,
         data TEXT NOT NULL
-      );
+      )
+    `);
 
+    if (input.includeContextTable !== false) {
+      db.exec(`
       CREATE TABLE session_context_epoch (
         session_id TEXT PRIMARY KEY,
         baseline TEXT NOT NULL,
@@ -862,8 +1158,9 @@ function createOpencodeDb(
         replacement_seq INTEGER,
         revision INTEGER DEFAULT 0 NOT NULL,
         agent TEXT DEFAULT 'build' NOT NULL
-      );
-    `);
+      )
+      `);
+    }
 
     db.prepare(`
       INSERT INTO project (
@@ -957,4 +1254,23 @@ function createOpencodeDb(
   } finally {
     db.close();
   }
+}
+
+function createClaudeSession(
+  rootDir: string,
+  input: {
+    projectFolder: string;
+    sessionId: string;
+    lines: Array<Record<string, unknown>>;
+  }
+): void {
+  const projectDir = join(rootDir, "projects", input.projectFolder);
+  const sessionPath = join(projectDir, `${input.sessionId}.jsonl`);
+  mkdirSync(projectDir, { recursive: true });
+
+  writeFileSync(
+    sessionPath,
+    input.lines.map((line) => JSON.stringify(line)).join("\n"),
+    "utf-8"
+  );
 }

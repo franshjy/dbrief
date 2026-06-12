@@ -36,7 +36,7 @@ export interface ParseSessionOptions {
 }
 
 export interface LocalSessionSource {
-  id: Exclude<SessionSourceId, "claude">;
+  id: SessionSourceId;
   getDefaultRoot(): string;
   isAvailable(root: string): boolean;
   getEarliestSessionDate(root: string): number;

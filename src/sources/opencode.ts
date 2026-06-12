@@ -235,6 +235,10 @@ function readCompactedContext(
   dbPath: string,
   options: ParseSessionOptions
 ): MessageTuple[] {
+  if (!tableExists(db, "session_context_epoch")) {
+    return [];
+  }
+
   const row = db.prepare(`
     SELECT baseline, snapshot
     FROM session_context_epoch
@@ -263,6 +267,17 @@ function readCompactedContext(
   }
 
   return dedupeContextMessages(tuples);
+}
+
+function tableExists(db: Database.Database, tableName: string): boolean {
+  const row = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table'
+      AND name = ?
+  `).get(tableName) as { name: string } | undefined;
+
+  return row !== undefined;
 }
 
 function groupMessageRows(

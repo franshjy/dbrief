@@ -112,6 +112,7 @@ async function extractRange(
   const candidates = listCandidateSessions(enabledSources, rangeStart, rangeEnd);
   const parsed = await parseSessions(enabledSources, candidates);
   printWarnings(`${fromDate}..${toDate}`, parsed.warnings);
+  let extractedDays = 0;
 
   for (const dateStr of dates) {
     const boundaries = getDayBoundaries(dateStr, timezone);
@@ -119,7 +120,7 @@ async function extractRange(
       ? join(outDir, getDefaultArtifactFilename(dateStr))
       : getDefaultArtifactPath(dateStr);
 
-    await extractDay(
+    const didWriteArtifact = await extractDay(
       dateStr,
       timezone,
       parsed.candidates,
@@ -128,9 +129,12 @@ async function extractRange(
       enabledSources,
       parsed
     );
+    if (didWriteArtifact) {
+      extractedDays += 1;
+    }
   }
 
-  console.log(`\nDone. Extracted ${dates.length} day${dates.length === 1 ? "" : "s"} to ${outDir ?? "current directory"}`);
+  console.log(`\nDone. Extracted ${extractedDays} day${extractedDays === 1 ? "" : "s"} to ${outDir ?? "current directory"}`);
 }
 
 async function extractDay(
@@ -141,7 +145,7 @@ async function extractDay(
   outPathOverride: string | undefined,
   enabledSources: EnabledSource[],
   parsedSourceSessions?: ParsedSourceSessions
-): Promise<void> {
+): Promise<boolean> {
   const parsed = parsedSourceSessions ?? await parseSessions(enabledSources, candidates);
 
   if (!parsedSourceSessions) {
@@ -152,7 +156,7 @@ async function extractDay(
 
   if (activeSessions.length === 0) {
     console.log(`  ${dateStr}: no activity (${candidates.length} threads scanned)`);
-    return;
+    return false;
   }
 
   const grouped = groupSessionsByProject(activeSessions);
@@ -188,6 +192,7 @@ async function extractDay(
   if (totalContext > 0) parts.push(`${totalContext} context`);
 
   console.log(`  ${dateStr}: ${parts.join(", ")}`);
+  return true;
 }
 
 async function parseSessions(
@@ -196,12 +201,12 @@ async function parseSessions(
 ): Promise<ParsedSourceSessions> {
   const sessions: ParsedSession[] = [];
   const warnings: SessionParseWarning[] = [];
-  const sourceMap = new Map<"codex" | "opencode", LocalSessionSource>(
+  const sourceMap = new Map<SessionSourceId, LocalSessionSource>(
     enabledSources.map((entry) => [entry.source.id, entry.source])
   );
 
   for (const candidate of candidates) {
-    const source = candidate.source === "claude" ? undefined : sourceMap.get(candidate.source);
+    const source = sourceMap.get(candidate.source);
     if (!source) continue;
     sessions.push(await source.parseSession(candidate, {
       onWarning: (warning) => warnings.push(warning),
@@ -242,11 +247,33 @@ function listCandidateSessions(
 }
 
 function getEarliestSessionDate(enabledSources: EnabledSource[]): number {
-  const timestamps = enabledSources.map(({ source, root }) => source.getEarliestSessionDate(root));
+  const timestamps: number[] = [];
+  const emptySourceMessages: string[] = [];
+
+  for (const { source, root } of enabledSources) {
+    try {
+      timestamps.push(source.getEarliestSessionDate(root));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isNoSessionsError(message)) {
+        emptySourceMessages.push(`${source.id}: ${message}`);
+        continue;
+      }
+      throw error;
+    }
+  }
+
   if (timestamps.length === 0) {
-    throw new Error("No enabled sources available to determine the earliest session date.");
+    const detail = emptySourceMessages.length > 0
+      ? ` ${emptySourceMessages.join("; ")}`
+      : "";
+    throw new Error(`No sessions found in enabled sources.${detail}`);
   }
   return Math.min(...timestamps);
+}
+
+function isNoSessionsError(message: string): boolean {
+  return /^No .+ sessions found\b/.test(message);
 }
 
 function resolveEnabledSources(options: ExtractOptions): EnabledSource[] {
@@ -254,9 +281,6 @@ function resolveEnabledSources(options: ExtractOptions): EnabledSource[] {
 
   if (explicitSources.length > 0) {
     return explicitSources.map((sourceId) => {
-      if (sourceId === "claude") {
-        throw new Error("Claude source is not implemented yet.");
-      }
       const source = implementedSources[sourceId];
       return {
         source,
