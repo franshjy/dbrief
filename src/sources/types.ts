@@ -19,7 +19,15 @@ export interface ParsedSession extends SessionCandidate {
   timezone: string | null;
   context: MessageTuple[];
   messages: MessageTuple[];
+  message_timestamps?: number[];
+  message_ids?: string[];
   user_activity_timestamps: number[];
+  compactions?: Array<{
+    summary_message_id: string;
+    summary_time: number;
+    summary_text: string | null;
+    tail_start_message_id: string | null;
+  }>;
 }
 
 export interface SessionParseWarning {
@@ -50,6 +58,9 @@ export function createEmptyParsedSession(candidate: SessionCandidate): ParsedSes
     timezone: null,
     context: [],
     messages: [],
+    message_timestamps: [],
+    message_ids: [],
     user_activity_timestamps: [],
+    compactions: [],
   };
 }

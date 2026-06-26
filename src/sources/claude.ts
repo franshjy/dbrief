@@ -82,6 +82,7 @@ export const claudeSource: LocalSessionSource = {
     try {
       const content = readFileSync(filePath, "utf-8");
       const lines = content.split(/\r?\n/);
+      let awaitingCompactSummary = false;
 
       for (let index = 0; index < lines.length; index += 1) {
         const rawLine = lines[index];
@@ -116,17 +117,36 @@ export const claudeSource: LocalSessionSource = {
 
         hydrateSessionMetadata(parsed, record);
 
+        if (isClaudeCompactBoundary(record)) {
+          awaitingCompactSummary = true;
+          continue;
+        }
+
         const role = getString(asRecord(record.message)?.role);
+        const timestamp = parseIsoTimestamp(getString(record.timestamp));
+        const messageId = getClaudeMessageId(record, index);
         if (role === "user") {
           const userText = extractClaudeUserText(record);
           if (userText) {
             parsed.messages.push(["u", userText]);
-            const timestamp = parseIsoTimestamp(getString(record.timestamp));
-            if (timestamp !== null) {
-              parsed.user_activity_timestamps.push(timestamp);
-            }
-            if (!parsed.title) {
-              parsed.title = userText;
+            parsed.message_timestamps?.push(timestamp ?? 0);
+            parsed.message_ids?.push(messageId);
+
+            if (record.isCompactSummary === true && awaitingCompactSummary) {
+              parsed.compactions?.push({
+                summary_message_id: messageId,
+                summary_time: timestamp ?? 0,
+                summary_text: userText,
+                tail_start_message_id: null,
+              });
+              awaitingCompactSummary = false;
+            } else {
+              if (timestamp !== null) {
+                parsed.user_activity_timestamps.push(timestamp);
+              }
+              if (!parsed.title) {
+                parsed.title = userText;
+              }
             }
           }
           continue;
@@ -136,14 +156,8 @@ export const claudeSource: LocalSessionSource = {
           const assistantText = extractClaudeAssistantText(record);
           if (assistantText) {
             parsed.messages.push(["a", assistantText]);
-          }
-          continue;
-        }
-
-        if (getString(record.type) === "summary") {
-          const summaryText = extractClaudeSummaryText(record);
-          if (summaryText) {
-            parsed.context.push(["a", summaryText]);
+            parsed.message_timestamps?.push(timestamp ?? 0);
+            parsed.message_ids?.push(messageId);
           }
         }
       }
@@ -268,15 +282,13 @@ function extractClaudeAssistantText(record: JsonRecord): string | null {
   return extractMessageText(message?.content, "assistant");
 }
 
-function extractClaudeSummaryText(record: JsonRecord): string | null {
-  const direct = getString(record.summary) ?? getString(record.text) ?? getString(record.content);
-  if (direct && direct.trim()) {
-    return direct.trim();
-  }
-
-  return extractMessageText(record.content, "assistant");
+function isClaudeCompactBoundary(record: JsonRecord): boolean {
+  return getString(record.type) === "system" && getString(record.subtype) === "compact_boundary";
 }
 
+function getClaudeMessageId(record: JsonRecord, lineIndex: number): string {
+  return getString(record.uuid) ?? getString(record.id) ?? `claude-line-${lineIndex + 1}`;
+}
 function extractMessageText(content: unknown, role: "user" | "assistant"): string | null {
   if (typeof content === "string") {
     const trimmed = content.trim();

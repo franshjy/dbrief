@@ -117,4 +117,35 @@ describe("parseSessionFile", () => {
       Date.parse("2026-06-01T12:00:01.000Z"),
     ]);
   });
+
+  it("extracts compacted replacement_history entries when content is stored as typed arrays", async () => {
+    const testDir = mkdtempSync(join(tmpdir(), "codex-trails-compacted-arrays-"));
+    const filePath = join(testDir, "compacted-arrays.jsonl");
+
+    writeFileSync(
+      filePath,
+      [
+        "{\"timestamp\":\"2026-06-01T10:00:00.000Z\",\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/test/project\",\"timezone\":\"UTC\"}}",
+        "{\"timestamp\":\"2026-06-01T10:00:01.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"before compact\"}}",
+        "{\"timestamp\":\"2026-06-01T10:00:02.000Z\",\"type\":\"compacted\",\"payload\":{\"message\":\"\",\"replacement_history\":[{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"User message preserved in compacted history\"}]},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Assistant message preserved in compacted history\"}]},{\"type\":\"compaction\",\"encrypted_content\":\"opaque\"}]}}",
+        "{\"timestamp\":\"2026-06-01T10:00:03.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"after compact\"}]}}",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    try {
+      const session = await parseSessionFile(filePath, "compacted-arrays");
+
+      expect(session.context).toEqual([
+        ["u", "User message preserved in compacted history"],
+        ["a", "Assistant message preserved in compacted history"],
+      ]);
+      expect(session.messages).toEqual([["a", "after compact"]]);
+      expect(session.user_activity_timestamps).toEqual([
+        Date.parse("2026-06-01T10:00:01.000Z"),
+      ]);
+    } finally {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
 });

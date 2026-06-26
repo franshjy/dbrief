@@ -662,6 +662,181 @@ describe("extract command", () => {
     expect(artifact.projects[0].threads[0].context).toEqual([]);
   });
 
+  it("trims Opencode output to the selected day and excludes DCP prompt noise", async () => {
+    const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-opencode-day-trim-"));
+    cleanupDirs.push(opencodeDir);
+
+    const projectRoot = join(opencodeDir, "workspace", "project-day-trim");
+    const outPath = join(opencodeDir, "dbrief_2026-06-15.json");
+
+    createOpencodeDb(opencodeDir, {
+      sessionId: "session-day-trim",
+      projectId: "project-day-trim",
+      directory: projectRoot,
+      worktree: projectRoot,
+      title: "Day Trim Session",
+      branch: null,
+      createdAt: Date.parse("2026-06-12T08:00:00.000Z"),
+      updatedAt: Date.parse("2026-06-15T08:41:00.000Z"),
+      messages: [
+        {
+          id: "m-old-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-12T08:39:16.534Z"),
+          parts: [{ id: "p-old-u", type: "text", text: "old day user prompt" }],
+        },
+        {
+          id: "m-old-a",
+          role: "assistant",
+          parentId: "m-old-u",
+          createdAt: Date.parse("2026-06-12T08:39:20.000Z"),
+          parts: [{ id: "p-old-a", type: "text", text: "old day assistant reply" }],
+        },
+        {
+          id: "m-dcp-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-15T08:40:00.000Z"),
+          parts: [{ id: "p-dcp-u", type: "text", text: "Ã¢â€“Â£ DCP | -928.7K removed, +35.4K summary" }],
+        },
+        {
+          id: "m-dcp-a",
+          role: "assistant",
+          parentId: "m-dcp-u",
+          createdAt: Date.parse("2026-06-15T08:40:05.000Z"),
+          parts: [{ id: "p-dcp-a", type: "text", text: "compression status reply" }],
+        },
+        {
+          id: "m-real-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-15T08:41:33.355Z"),
+          parts: [{ id: "p-real-u", type: "text", text: "Are you able to actually check/control the emulator when testing/debugging?" }],
+        },
+        {
+          id: "m-real-a",
+          role: "assistant",
+          parentId: "m-real-u",
+          createdAt: Date.parse("2026-06-15T08:41:34.465Z"),
+          parts: [{ id: "p-real-a", type: "text", text: "I can control an emulator through flutter/adb." }],
+        },
+      ],
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      date: "2026-06-15",
+      out: outPath,
+      source: ["opencode"],
+      opencodeDir,
+    } as never);
+
+    const artifact = JSON.parse(readFileSync(outPath, "utf-8")) as {
+      projects: Array<{ threads: Array<{ messages: Array<[string, string]> }> }>;
+    };
+
+    expect(artifact.projects[0].threads[0].messages).toEqual([
+      ["u", "Are you able to actually check/control the emulator when testing/debugging?"],
+      ["a", "I can control an emulator through flutter/adb."],
+    ]);
+  });
+
+
+  it("uses Opencode inline compaction summaries as context and preserves only the surviving tail", async () => {
+    const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-opencode-inline-compaction-"));
+    cleanupDirs.push(opencodeDir);
+
+    const projectRoot = join(opencodeDir, "workspace", "project-inline-compaction");
+    const outPath = join(opencodeDir, "dbrief_2026-06-15.json");
+
+    createOpencodeDb(opencodeDir, {
+      sessionId: "session-inline-compaction",
+      projectId: "project-inline-compaction",
+      directory: projectRoot,
+      worktree: projectRoot,
+      title: "Inline Compaction Session",
+      branch: null,
+      createdAt: Date.parse("2026-06-15T08:00:00.000Z"),
+      updatedAt: Date.parse("2026-06-15T08:31:00.000Z"),
+      includeContextTable: false,
+      messages: [
+        {
+          id: "m-old-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-15T08:00:01.000Z"),
+          parts: [{ id: "p-old-u", type: "text", text: "compressed-away user turn" }],
+        },
+        {
+          id: "m-old-a",
+          role: "assistant",
+          parentId: "m-old-u",
+          createdAt: Date.parse("2026-06-15T08:00:02.000Z"),
+          parts: [{ id: "p-old-a", type: "text", text: "compressed-away assistant turn" }],
+        },
+        {
+          id: "m-tail-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-15T08:10:01.000Z"),
+          parts: [{ id: "p-tail-u", type: "text", text: "preserved tail user turn" }],
+        },
+        {
+          id: "m-tail-a",
+          role: "assistant",
+          parentId: "m-tail-u",
+          createdAt: Date.parse("2026-06-15T08:10:02.000Z"),
+          parts: [{ id: "p-tail-a", type: "text", text: "preserved tail assistant turn" }],
+        },
+        {
+          id: "m-comp-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-15T08:20:01.000Z"),
+          parts: [{ id: "p-comp", type: "compaction", tailStartId: "m-tail-u" }],
+        },
+        {
+          id: "m-comp-a",
+          role: "assistant",
+          parentId: "m-comp-u",
+          summary: true,
+          finish: "stop",
+          createdAt: Date.parse("2026-06-15T08:20:02.000Z"),
+          parts: [{ id: "p-comp-a", type: "text", text: "summary of earlier work" }],
+        },
+        {
+          id: "m-late-u",
+          role: "user",
+          createdAt: Date.parse("2026-06-15T08:30:01.000Z"),
+          parts: [{ id: "p-late-u", type: "text", text: "post-compaction user turn" }],
+        },
+        {
+          id: "m-late-a",
+          role: "assistant",
+          parentId: "m-late-u",
+          createdAt: Date.parse("2026-06-15T08:30:02.000Z"),
+          parts: [{ id: "p-late-a", type: "text", text: "post-compaction assistant turn" }],
+        },
+      ],
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      date: "2026-06-15",
+      out: outPath,
+      source: ["opencode"],
+      opencodeDir,
+    } as never);
+
+    const artifact = JSON.parse(readFileSync(outPath, "utf-8")) as {
+      projects: Array<{ threads: Array<{ messages: Array<[string, string]>; context: Array<[string, string]> }> }>;
+    };
+
+    expect(artifact.projects[0].threads[0].context).toContainEqual(["a", "summary of earlier work"]);
+    expect(artifact.projects[0].threads[0].messages).toEqual([
+      ["u", "preserved tail user turn"],
+      ["a", "preserved tail assistant turn"],
+      ["u", "post-compaction user turn"],
+      ["a", "post-compaction assistant turn"],
+    ]);
+  });
   it("merges Codex and Opencode sessions into one artifact when both sources are selected", async () => {
     const codexDir = mkdtempSync(join(tmpdir(), "codex-trails-merge-codex-"));
     const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-merge-opencode-"));
@@ -939,6 +1114,77 @@ describe("extract command", () => {
     expect(artifact.projects[0].threads[0].context).toEqual([]);
   });
 
+  it("uses Claude compact summaries as context and omits pre-compact messages", async () => {
+    const claudeDir = mkdtempSync(join(tmpdir(), "codex-trails-claude-compact-"));
+    cleanupDirs.push(claudeDir);
+
+    const outPath = join(claudeDir, "dbrief_2026-06-02.json");
+    createClaudeSession(claudeDir, {
+      projectFolder: "C--dev-projects-project-compact",
+      sessionId: "claude-session-compact",
+      lines: [
+        {
+          type: "system",
+          timestamp: "2026-06-02T10:00:00.000Z",
+          sessionId: "claude-session-compact",
+          cwd: "C:\\dev\\projects\\project-compact",
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:01.000Z",
+          message: { role: "user", content: "earlier request" },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-06-02T10:00:02.000Z",
+          message: { role: "assistant", content: [{ type: "text", text: "earlier response" }] },
+        },
+        {
+          type: "system",
+          subtype: "compact_boundary",
+          timestamp: "2026-06-02T10:00:03.000Z",
+          content: "Conversation compacted",
+        },
+        {
+          type: "user",
+          isCompactSummary: true,
+          timestamp: "2026-06-02T10:00:04.000Z",
+          message: { role: "user", content: "This session is being continued.\n\nSummary:\nEarlier work is complete." },
+        },
+        {
+          type: "user",
+          timestamp: "2026-06-02T10:00:05.000Z",
+          message: { role: "user", content: "continue from the summary" },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-06-02T10:00:06.000Z",
+          message: { role: "assistant", content: [{ type: "text", text: "continuing" }] },
+        },
+      ],
+    });
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      date: "2026-06-02",
+      out: outPath,
+      source: ["claude"],
+      claudeDir,
+    } as never);
+
+    const artifact = JSON.parse(readFileSync(outPath, "utf-8")) as {
+      projects: Array<{ threads: Array<{ messages: Array<[string, string]>; context: Array<[string, string]> }> }>;
+    };
+
+    expect(artifact.projects[0].threads[0].context).toEqual([
+      ["a", "This session is being continued.\n\nSummary:\nEarlier work is complete."],
+    ]);
+    expect(artifact.projects[0].threads[0].messages).toEqual([
+      ["u", "continue from the summary"],
+      ["a", "continuing"],
+    ]);
+  });
   it("parses each Claude session once across range extraction", async () => {
     const claudeDir = mkdtempSync(join(tmpdir(), "codex-trails-claude-range-"));
     cleanupDirs.push(claudeDir);
@@ -1049,7 +1295,10 @@ interface OpencodeMessageSeed {
   id: string;
   role: "user" | "assistant";
   createdAt: number;
-  parts: Array<{ id: string; type: string; text?: string; synthetic?: boolean }>;
+  parentId?: string;
+  summary?: boolean;
+  finish?: string;
+  parts: Array<{ id: string; type: string; text?: string; synthetic?: boolean; tailStartId?: string | null }>;
 }
 
 function createOpencodeDb(
@@ -1226,6 +1475,9 @@ function createOpencodeDb(
         time_updated: message.createdAt,
         data: JSON.stringify({
           role: message.role,
+          parentID: message.parentId,
+          summary: message.summary,
+          finish: message.finish,
           time: { created: message.createdAt },
         }),
       });
@@ -1246,6 +1498,7 @@ function createOpencodeDb(
           data: JSON.stringify({
             type: part.type,
             text: part.text,
+            tail_start_id: part.tailStartId,
             synthetic: part.synthetic === true ? true : undefined,
           }),
         });
@@ -1255,7 +1508,6 @@ function createOpencodeDb(
     db.close();
   }
 }
-
 function createClaudeSession(
   rootDir: string,
   input: {

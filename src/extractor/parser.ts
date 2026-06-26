@@ -155,6 +155,7 @@ export async function parseSessionFile(
           session.context = extractMessagesFromHistory(replacementHistory);
         }
         session.messages = [];
+        session.message_timestamps = [];
         continue;
       }
 
@@ -169,6 +170,7 @@ export async function parseSessionFile(
           }
           if (content) {
             session.messages.push(["u", content]);
+            session.message_timestamps?.push(timestampMs);
           }
         }
       }
@@ -185,6 +187,7 @@ export async function parseSessionFile(
               .join("\n");
             if (textParts) {
               session.messages.push(["a", textParts]);
+              session.message_timestamps?.push(Date.parse(raw.timestamp));
             }
           }
         }
@@ -214,24 +217,37 @@ function extractMessagesFromHistory(
     const role = item.role as string;
     const content = item.content;
 
-    if (role === "user" && typeof content === "string" && content.trim()) {
-      messages.push(["u", content.trim()]);
+    if (role === "user") {
+      const text = extractHistoryText(content, "input_text");
+      if (text) {
+        messages.push(["u", text]);
+      }
     } else if (role === "assistant") {
-      if (typeof content === "string" && content.trim()) {
-        messages.push(["a", content.trim()]);
-      } else if (Array.isArray(content)) {
-        const textParts = (content as Array<{ type: string; text?: string }>)
-          .filter((c) => c.type === "output_text" && c.text)
-          .map((c) => c.text!)
-          .join("\n");
-        if (textParts.trim()) {
-          messages.push(["a", textParts.trim()]);
-        }
+      const text = extractHistoryText(content, "output_text");
+      if (text) {
+        messages.push(["a", text]);
       }
     }
   }
 
   return messages;
+}
+
+function extractHistoryText(content: unknown, textType: "input_text" | "output_text"): string | null {
+  if (typeof content === "string" && content.trim()) {
+    return content.trim();
+  }
+
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const textParts = (content as Array<{ type?: string; text?: string }>)
+    .filter((entry) => entry.type === textType && typeof entry.text === "string" && entry.text.trim())
+    .map((entry) => entry.text!.trim())
+    .join("\n");
+
+  return textParts || null;
 }
 
 function getErrorMessage(error: unknown): string {

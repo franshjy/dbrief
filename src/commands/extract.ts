@@ -5,6 +5,7 @@ import { dirname } from "path";
 import {
   getDayBoundaries,
   filterSessionsByActivity,
+  trimSessionToDateRange,
   parseDate,
   getDateRange,
   timestampToDate,
@@ -152,7 +153,9 @@ async function extractDay(
     printWarnings(dateStr, parsed.warnings);
   }
 
-  const activeSessions = filterSessionsByActivity(parsed.sessions, boundaries.start, boundaries.end);
+  const activeSessions = filterSessionsByActivity(parsed.sessions, boundaries.start, boundaries.end)
+    .map((session) => trimSessionToDateRange(session, boundaries.start, boundaries.end))
+    .filter((session) => session.messages.length > 0 || session.context.length > 0);
 
   if (activeSessions.length === 0) {
     console.log(`  ${dateStr}: no activity (${candidates.length} threads scanned)`);

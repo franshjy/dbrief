@@ -1,3 +1,4 @@
+import type { MessageTuple } from "../types/artifact.js";
 import type { ParsedSession } from "../sources/types.js";
 
 export interface DayBoundaries {
@@ -66,6 +67,93 @@ export function filterSessionsByActivity(
       return timestamp >= start.getTime() && timestamp <= end.getTime();
     });
   });
+}
+
+export function trimSessionToDateRange(
+  session: ParsedSession,
+  start: Date,
+  end: Date
+): ParsedSession {
+  const timestamps = session.message_timestamps;
+  if (!timestamps || timestamps.length !== session.messages.length) {
+    return session;
+  }
+
+  const messageIds = session.message_ids;
+  const activityStart = start.getTime();
+  const activityEnd = end.getTime();
+  let keepIndexes = timestamps
+    .map((timestamp, index) => ({ timestamp, index }))
+    .filter(({ timestamp }) => timestamp >= activityStart && timestamp <= activityEnd)
+    .map(({ index }) => index);
+
+  let nextContext = session.context.slice();
+  const latestCompaction = session.compactions
+    ?.filter((compaction) => compaction.summary_time <= activityEnd)
+    .sort((left, right) => right.summary_time - left.summary_time)[0];
+
+  if (
+    latestCompaction &&
+    messageIds &&
+    messageIds.length === session.messages.length
+  ) {
+    if (latestCompaction.summary_text && latestCompaction.summary_text.trim()) {
+      nextContext = dedupeContextMessages([
+        ...nextContext,
+        ["a", latestCompaction.summary_text.trim()],
+      ]);
+    }
+
+    const summaryIndex = messageIds.indexOf(latestCompaction.summary_message_id);
+    const tailIndex = latestCompaction.tail_start_message_id
+      ? messageIds.indexOf(latestCompaction.tail_start_message_id)
+      : -1;
+
+    keepIndexes = keepIndexes.filter((index) => {
+      if (index === summaryIndex) {
+        return false;
+      }
+      if (summaryIndex < 0) {
+        return true;
+      }
+      if (tailIndex >= 0) {
+        return index >= tailIndex;
+      }
+      return index > summaryIndex;
+    });
+  }
+
+  const trimmedMessages = keepIndexes.map((index) => session.messages[index]!);
+  const trimmedTimestamps = keepIndexes.map((index) => timestamps[index]!);
+  const trimmedIds = messageIds && messageIds.length === session.messages.length
+    ? keepIndexes.map((index) => messageIds[index]!)
+    : session.message_ids;
+  const trimmedActivity = session.user_activity_timestamps.filter((timestamp) => {
+    return timestamp >= activityStart && timestamp <= activityEnd;
+  });
+
+  return {
+    ...session,
+    context: nextContext,
+    messages: trimmedMessages,
+    message_timestamps: trimmedTimestamps,
+    message_ids: trimmedIds,
+    user_activity_timestamps: trimmedActivity,
+  };
+}
+
+function dedupeContextMessages(messages: MessageTuple[]): MessageTuple[] {
+  const result: MessageTuple[] = [];
+  const seen = new Set<string>();
+
+  for (const message of messages) {
+    const key = `${message[0]}:${message[1]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(message);
+  }
+
+  return result;
 }
 
 export function parseDate(dateStr: string): string {

@@ -161,23 +161,38 @@ export const opencodeSource: LocalSessionSource = {
         ORDER BY m.time_created ASC, p.time_created ASC, p.id ASC
       `).all(session.thread_id) as OpencodeMessageRow[];
 
-      for (const message of groupMessageRows(rows, dbPath, session.thread_id, options)) {
+      const grouped = groupMessageRows(rows, dbPath, session.thread_id, options);
+      parsed.compactions = findCompletedCompactions(grouped);
+
+      const skippedUserIds = new Set<string>();
+      for (const message of grouped) {
         const role = getString(message.messageData?.role);
+        const parentId = getString(message.messageData?.parentID);
         const createdAt = toFiniteNumber(asRecord(message.messageData?.time)?.created) ?? message.timeCreated;
         const visibleText = message.parts
           .map((part) => extractVisibleText(part.data))
           .filter((value): value is string => Boolean(value));
 
         if (role === "user") {
-          if (visibleText.length > 0) {
-            parsed.messages.push(["u", visibleText.join("\n")]);
+          const joinedText = visibleText.join("\n");
+          if (visibleText.length > 0 && !isDcpCompressionMarker(joinedText)) {
+            parsed.messages.push(["u", joinedText]);
+            parsed.message_timestamps?.push(createdAt);
+            parsed.message_ids?.push(message.id);
             parsed.user_activity_timestamps.push(createdAt);
+          } else if (visibleText.length > 0) {
+            skippedUserIds.add(message.id);
           }
           continue;
         }
 
         if (role === "assistant" && visibleText.length > 0) {
+          if (parentId && skippedUserIds.has(parentId)) {
+            continue;
+          }
           parsed.messages.push(["a", visibleText.join("\n")]);
+          parsed.message_timestamps?.push(createdAt);
+          parsed.message_ids?.push(message.id);
         }
       }
 
@@ -227,6 +242,55 @@ function normalizeProjectRoot(worktree: string, directory: string): string | nul
     return worktree;
   }
   return directory || null;
+}
+
+function isDcpCompressionMarker(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  return /^\W*DCP\s*\|/u.test(normalized) ||
+    /^\W*Compression\s*#/u.test(normalized);
+}
+
+function findCompletedCompactions(messages: GroupedMessage[]): NonNullable<ParsedSession["compactions"]> {
+  const compactionUsers = new Map<string, { tailStartMessageId: string | null }>();
+
+  for (const message of messages) {
+    const role = getString(message.messageData?.role);
+    if (role !== "user") continue;
+
+    const compactionPart = message.parts.find((part) => getString(part.data?.type) === "compaction");
+    if (!compactionPart) continue;
+
+    compactionUsers.set(message.id, {
+      tailStartMessageId: getString(compactionPart.data?.tail_start_id),
+    });
+  }
+
+  const results: NonNullable<ParsedSession["compactions"]> = [];
+  for (const message of messages) {
+    const role = getString(message.messageData?.role);
+    const parentId = getString(message.messageData?.parentID);
+    const finish = getString(message.messageData?.finish);
+    const summary = getBoolean(message.messageData?.summary);
+    if (role !== "assistant" || summary !== true || !parentId || !finish) continue;
+
+    const compactionUser = compactionUsers.get(parentId);
+    if (!compactionUser) continue;
+
+    const summaryText = message.parts
+      .map((part) => extractVisibleText(part.data))
+      .filter((value): value is string => Boolean(value))
+      .join("\n") || null;
+
+    results.push({
+      summary_message_id: message.id,
+      summary_time: toFiniteNumber(asRecord(message.messageData?.time)?.created) ?? message.timeCreated,
+      summary_text: summaryText,
+      tail_start_message_id: compactionUser.tailStartMessageId,
+    });
+  }
+
+  return results;
 }
 
 function readCompactedContext(
@@ -417,6 +481,10 @@ function asRecord(value: unknown): JsonRecord | null {
 
 function getString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function getBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function toFiniteNumber(value: unknown): number | null {
