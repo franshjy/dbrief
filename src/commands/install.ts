@@ -9,6 +9,34 @@ import {
 } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { checkbox } from "@inquirer/prompts";
+
+export type InstallAgent = "codex" | "opencode" | "claude";
+
+export interface InstallOptions {
+  agent?: string;
+  all?: boolean;
+}
+
+const skillName = "dbrief-note";
+const allAgents: InstallAgent[] = ["codex", "opencode", "claude"];
+const installTargets: Record<InstallAgent, { label: string; configDir: string; hint: string }> = {
+  codex: {
+    label: "Codex",
+    configDir: ".codex",
+    hint: "$dbrief-note",
+  },
+  opencode: {
+    label: "Opencode",
+    configDir: ".opencode",
+    hint: "Load the dbrief-note skill with Opencode's skill tool",
+  },
+  claude: {
+    label: "Claude Code",
+    configDir: ".claude",
+    hint: "Ask Claude Code to use the dbrief-note skill",
+  },
+};
 
 function findSkillSource(): string {
   const distDir = (() => {
@@ -20,8 +48,8 @@ function findSkillSource(): string {
   })();
 
   const candidates = [
-    join(distDir, "..", "skills", "dbrief-note", "SKILL.md"),
-    join(distDir, "..", "..", "skills", "dbrief-note", "SKILL.md"),
+    join(distDir, "..", "skills", skillName, "SKILL.md"),
+    join(distDir, "..", "..", "skills", skillName, "SKILL.md"),
   ];
 
   for (const p of candidates) {
@@ -34,14 +62,100 @@ function findSkillSource(): string {
   );
 }
 
-export function installCommand(): void {
+export async function installCommand(options: InstallOptions = {}): Promise<void> {
   const cwd = process.cwd();
   const skillSource = findSkillSource();
+  const agents = await resolveInstallAgents(options);
 
-  const targetDir = join(cwd, ".codex", "skills", "dbrief-note");
+  for (const agent of agents) {
+    installSkillForAgent(cwd, skillSource, agent);
+  }
+
+  console.log(`\nUsage:`);
+  console.log(`  dbrief extract`);
+  for (const agent of agents) {
+    console.log(`  ${installTargets[agent].hint}`);
+  }
+  console.log(`  or invoke the skill in any of your coding agents`);
+}
+
+async function resolveInstallAgents(options: InstallOptions): Promise<InstallAgent[]> {
+  if (options.all) {
+    return allAgents;
+  }
+
+  if (options.agent) {
+    return parseInstallAgents(options.agent);
+  }
+
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    const selected = await checkbox<InstallAgent>({
+      message: "Install dbrief-note skill to:",
+      choices: allAgents.map((agent) => ({
+        name: `${installTargets[agent].label} (${installTargets[agent].configDir}/skills/${skillName}/SKILL.md)`,
+        value: agent,
+        checked: agent === "codex",
+      })),
+      required: true,
+      shortcuts: {
+        all: null,
+        invert: null,
+      },
+      theme: {
+        icon: {
+          checked: "[x]",
+          unchecked: "[ ]",
+          cursor: ">",
+        },
+        style: {
+          keysHelpTip: () => "Space to select, Enter to confirm",
+        },
+      },
+    });
+    return selected;
+  }
+
+  return ["codex"];
+}
+
+function parseInstallAgents(value: string): InstallAgent[] {
+  const agents = value
+    .split(",")
+    .map((part) => normalizeInstallAgent(part))
+    .filter((agent, index, parsed) => parsed.indexOf(agent) === index);
+
+  if (agents.length === 0) {
+    throw new Error("No coding agents selected. Expected codex, opencode, or claude.");
+  }
+
+  return agents;
+}
+
+function normalizeInstallAgent(value: string): InstallAgent {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "claudecode" || normalized === "claude-code") {
+    return "claude";
+  }
+
+  if (normalized === "codex" || normalized === "opencode" || normalized === "claude") {
+    return normalized;
+  }
+
+  throw new Error(`Unknown coding agent: ${value}. Expected codex, opencode, or claude.`);
+}
+
+function installSkillForAgent(cwd: string, skillSource: string, agent: InstallAgent): void {
+  const target = installTargets[agent];
+  const agentDir = join(cwd, target.configDir);
+  const skillsDir = join(agentDir, "skills");
+  const targetDir = join(skillsDir, skillName);
   const targetFile = join(targetDir, "SKILL.md");
+  const installDirs = [agentDir, skillsDir, targetDir];
 
+  ensureSafeInstallDirectories(installDirs);
   mkdirSync(targetDir, { recursive: true });
+  ensureSafeInstallDirectories(installDirs);
   const tempFile = join(
     targetDir,
     `.SKILL.md.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -61,11 +175,24 @@ export function installCommand(): void {
     throw error;
   }
 
-  console.log(`Installed dbrief-note skill to ${targetFile}`);
-  console.log(`\nUsage:`);
-  console.log(`  dbrief extract`);
-  console.log(`  $dbrief_note`);
-  console.log(`  or invoke the skill in any of your coding agents`);
+  console.log(`Installed dbrief-note skill for ${target.label} to ${targetFile}`);
+}
+
+function ensureSafeInstallDirectories(dirs: string[]): void {
+  for (const dir of dirs) {
+    if (!existsSync(dir)) {
+      continue;
+    }
+
+    const stats = lstatSync(dir);
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Refusing to use symbolic link in install path: ${dir}`);
+    }
+
+    if (!stats.isDirectory()) {
+      throw new Error(`Refusing to use non-directory install path: ${dir}`);
+    }
+  }
 }
 
 function ensureSafeInstallDestination(targetFile: string): void {

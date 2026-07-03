@@ -105,7 +105,7 @@ function resolveSafeWorkingDirectory(): string {
             return candidate;
           }
         } catch {
-          // Fall through to other safe candidates.
+
         }
       }
     }

@@ -10,7 +10,7 @@ const collectOption = (value: string, previous: string[]): string[] => previous.
 program
   .name("dbrief")
   .description("Extract coding agent session activity into daily artifacts")
-  .version("0.1.0");
+  .version("1.0.0");
 
 program
   .command("extract")
@@ -28,6 +28,8 @@ program
 program
   .command("install")
   .description("Install the dbrief-note skill into the current project")
+  .option("--agent <agent>", "Install to coding agent(s): codex, opencode, claude. Use commas for multiple")
+  .option("--all", "Install to all supported coding agents")
   .action(installCommand);
 
 program

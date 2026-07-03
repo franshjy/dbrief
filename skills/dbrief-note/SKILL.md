@@ -12,12 +12,64 @@ Infer note conventions from the target location, existing file, nearby templates
 
 When the user asks for a daily note, first generate or refresh the artifact with the Dbrief CLI before writing the note.
 
-1. Run `dbrief extract` for the requested date or range.
-2. Use `--date`, `--from`, `--to`, or `--out` when the user request needs them.
+1. Determine the requested date or range. If unspecified, use today.
+2. Run `dbrief extract` with the needed date, range, source, root, or output options.
 3. Read the generated JSON artifact.
 4. Write the final Markdown note from that artifact.
 
 Default artifact names are `./dbrief_YYYY-MM-DD.json` in the current directory unless `--out` is provided.
+
+## Dbrief CLI Reference
+
+Use these commands from the directory where the user wants the JSON artifact written, unless the user gives another location.
+
+### Extract Artifacts
+
+```bash
+dbrief extract
+dbrief extract --date YYYY-MM-DD
+dbrief extract --date yesterday
+dbrief extract --from YYYY-MM-DD --to YYYY-MM-DD
+dbrief extract --out ./path-or-directory
+dbrief extract --source codex,opencode,claude
+dbrief extract --codex-dir ~/.codex
+dbrief extract --opencode-dir ~/.local/share/opencode
+dbrief extract --claude-dir ~/.claude
+```
+
+Use `--date` for one daily note. Use `--from` and `--to` for a range. Use `--out` when the user asks for a custom artifact file or directory.
+
+When no `--source` is provided, Dbrief auto-discovers supported local sources. Use `--source` only when the user asks to limit extraction or when a specific coding agent source is needed.
+
+Supported sources are:
+
+- `codex`: Codex sessions
+- `opencode`: Opencode sessions
+- `claude`: Claude Code sessions
+
+Use source root overrides only when the user provides non-default session locations or default discovery fails.
+
+### Inspect Artifacts
+
+```bash
+dbrief inspect --input ./dbrief_YYYY-MM-DD.json
+dbrief inspect --input ./dbrief_YYYY-MM-DD.json --format summary
+```
+
+Use `inspect --format summary` for a quick artifact check before writing a note, especially for large artifacts or range output.
+
+### Install Skill
+
+```bash
+dbrief install
+dbrief install --agent codex
+dbrief install --agent opencode
+dbrief install --agent claude
+dbrief install --agent codex,opencode
+dbrief install --all
+```
+
+These install commands are for setting up the skill, not for writing the daily note. Do not run them during normal note generation unless the skill is missing or the user asks to install it.
 
 ## Output Format
 
@@ -49,14 +101,14 @@ If no stronger existing convention is detected, use this base structure:
 ## Instructions
 
 1. If the artifact does not already exist for the requested date, run `dbrief extract` first.
-2. Read the JSON artifact (user provides the path, or use `./dbrief_YYYY-MM-DD.json` from the current directory by default)
+2. Read the JSON artifact. Use the user-provided path, `--out` path, or `./dbrief_YYYY-MM-DD.json` from the current directory by default.
 3. For each project, analyze the conversation threads to identify:
    - Concrete changes (features, fixes, decisions made)
    - Unresolved items (questions raised, blockers, incomplete work)
    - Notable context (architectural decisions, trade-offs discussed)
-4. Write a concise summary that ties everything together
-5. Keep the tone retrospective and factual
-6. Use the project directory name as the project heading
+4. Write a concise summary that ties everything together.
+5. Keep the tone retrospective and factual.
+6. Use the project directory name as the project heading.
 
 ## Writer Rules
 
@@ -65,3 +117,4 @@ If no stronger existing convention is detected, use this base structure:
 - If no convention is detected, use the base Markdown structure above.
 - Do not assume Obsidian-only syntax unless the workspace clearly uses it.
 - Put non-project-wide material, cross-project notes, personal workflow notes, and uncategorized items under `## Other`.
+- Do not include tool-call internals, raw logs, token accounting, or unrelated operational noise unless it is necessary to explain a user-visible outcome.

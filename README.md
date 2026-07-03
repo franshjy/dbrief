@@ -22,9 +22,9 @@ npm install -g @franshjy/dbrief
 
 ```bash
 cd ~/your-project
-dbrief install              # Install dbrief-note skill
+dbrief install              # Choose which coding agent(s) receive dbrief-note
 dbrief extract              # Extract today's sessions
-$dbrief_note
+$dbrief-note
 ```
 
 The CLI produces the JSON artifact. Your coding agent uses the installed `dbrief-note` skill to turn that artifact into a Markdown note with `Summary`, `Projects`, and `Other` sections.
@@ -63,11 +63,18 @@ Notes:
 
 ### install
 
-Install the dbrief-note skill to `.codex/skills/dbrief-note/` in the current directory. The skill writes Markdown only. Dbrief does not include note-app adapters or native app APIs in this release.
+Install the `dbrief-note` skill to one or more coding agents in the current directory. The skill writes Markdown only. Dbrief does not include note-app adapters or native app APIs in this release.
 
 ```bash
-dbrief install
+dbrief install                         # Interactive selector
+dbrief install --agent codex           # Codex only -> .codex/skills/dbrief-note/SKILL.md
+dbrief install --agent opencode        # Opencode only -> .opencode/skills/dbrief-note/SKILL.md
+dbrief install --agent claude          # Claude Code only -> .claude/skills/dbrief-note/SKILL.md
+dbrief install --agent codex,opencode  # Multiple selected agents
+dbrief install --all                   # Codex, Opencode, and Claude Code
 ```
+
+In non-interactive shells, `dbrief install` keeps the previous Codex default.
 
 ### inspect
 
