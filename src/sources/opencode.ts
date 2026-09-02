@@ -97,6 +97,20 @@ export const opencodeSource: LocalSessionSource = {
     let db: Database.Database | null = null;
     try {
       db = new Database(dbPath, { readonly: true });
+      // Newer opencode builds dropped branch/project_id/time_used from the
+      // workspace table; only run the branch lookup when the schema still has it.
+      const workspaceBranchSelect = supportsWorkspaceBranch(db)
+        ? `
+            (
+              SELECT w.branch
+              FROM workspace w
+              WHERE w.project_id = s.project_id
+                AND w.branch IS NOT NULL
+                AND w.branch != ''
+              ORDER BY w.time_used DESC
+              LIMIT 1
+            ) AS workspace_branch`
+        : "NULL AS workspace_branch";
       const rows = db.prepare(`
         SELECT
           s.id,
@@ -107,15 +121,7 @@ export const opencodeSource: LocalSessionSource = {
           s.time_archived,
           s.metadata,
           p.worktree,
-          (
-            SELECT w.branch
-            FROM workspace w
-            WHERE w.project_id = s.project_id
-              AND w.branch IS NOT NULL
-              AND w.branch != ''
-            ORDER BY w.time_used DESC
-            LIMIT 1
-          ) AS workspace_branch
+          ${workspaceBranchSelect}
         FROM session s
         JOIN project p ON p.id = s.project_id
         WHERE s.time_archived IS NULL
@@ -214,6 +220,14 @@ export const opencodeSource: LocalSessionSource = {
 
 function getDbPath(root: string): string {
   return join(root, "opencode.db");
+}
+
+function supportsWorkspaceBranch(db: Database.Database): boolean {
+  const columns = db
+    .prepare("PRAGMA table_info(workspace)")
+    .all() as Array<{ name: string }>;
+  const names = new Set(columns.map((column) => column.name));
+  return names.has("branch") && names.has("project_id") && names.has("time_used");
 }
 
 function toCandidate(dbPath: string, row: OpencodeSessionRow): SessionCandidate {

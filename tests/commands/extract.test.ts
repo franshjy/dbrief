@@ -662,6 +662,54 @@ describe("extract command", () => {
     expect(artifact.projects[0].threads[0].context).toEqual([]);
   });
 
+  it("extracts Opencode artifacts when the workspace table lost the branch columns (newer opencode schema)", async () => {
+    const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-opencode-new-schema-"));
+    cleanupDirs.push(opencodeDir);
+
+    const projectRoot = join(opencodeDir, "workspace", "project-new-schema");
+    const outPath = join(opencodeDir, "dbrief_2026-06-02.json");
+
+    createOpencodeDb(
+      opencodeDir,
+      {
+        sessionId: "session-new-schema",
+        projectId: "project-new-schema",
+        directory: projectRoot,
+        worktree: projectRoot,
+        title: "New Schema Session",
+        branch: null,
+        createdAt: Date.parse("2026-06-02T10:00:00.000Z"),
+        updatedAt: Date.parse("2026-06-02T10:05:00.000Z"),
+        messages: [
+          {
+            id: "m1",
+            role: "user",
+            createdAt: Date.parse("2026-06-02T10:00:01.000Z"),
+            parts: [{ id: "p1", type: "text", text: "hello new schema" }],
+          },
+        ],
+      },
+      { newWorkspaceSchema: true }
+    );
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await extractCommand({
+      date: "2026-06-02",
+      out: outPath,
+      source: ["opencode"],
+      opencodeDir,
+    } as never);
+
+    expect(existsSync(outPath)).toBe(true);
+    const artifact = JSON.parse(readFileSync(outPath, "utf-8")) as {
+      projects: Array<{ threads: Array<{ branch: string | null; messages: Array<[string, string]> }> }>;
+    };
+
+    expect(artifact.projects[0].threads[0].branch).toBe(null);
+    expect(artifact.projects[0].threads[0].messages).toEqual([["u", "hello new schema"]]);
+  });
+
   it("trims Opencode output to the selected day and excludes DCP prompt noise", async () => {
     const opencodeDir = mkdtempSync(join(tmpdir(), "codex-trails-opencode-day-trim-"));
     cleanupDirs.push(opencodeDir);
@@ -1314,7 +1362,8 @@ function createOpencodeDb(
     updatedAt: number;
     includeContextTable?: boolean;
     messages: OpencodeMessageSeed[];
-  }
+  },
+  options: { newWorkspaceSchema?: boolean } = {}
 ): void {
   const dbPath = join(rootDir, "opencode.db");
   const db = new Database(dbPath);
@@ -1378,6 +1427,17 @@ function createOpencodeDb(
         project_id TEXT NOT NULL,
         time_used INTEGER NOT NULL DEFAULT 0
       );
+    ` + (options.newWorkspaceSchema
+        ? `
+      DROP TABLE workspace;
+      CREATE TABLE workspace (
+        id TEXT PRIMARY KEY,
+        provider TEXT,
+        binding TEXT,
+        created_at TEXT,
+        last_used_at TEXT
+      );`
+        : "") + `
 
       CREATE TABLE message (
         id TEXT PRIMARY KEY,
@@ -1424,7 +1484,7 @@ function createOpencodeDb(
       time_updated: input.updatedAt,
     });
 
-    if (input.branch) {
+    if (input.branch && !options.newWorkspaceSchema) {
       db.prepare(`
         INSERT INTO workspace (
           id, type, name, branch, directory, extra, project_id, time_used
